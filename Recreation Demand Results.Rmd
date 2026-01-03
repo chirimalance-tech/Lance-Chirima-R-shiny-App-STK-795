@@ -1,0 +1,202 @@
+---
+title: "cNBetended NMES1988 Results "
+author: "Lance Chirima"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# get the necessary packages
+
+install.packages("devtools")
+library(devtools)
+install_github("arnootto/cNB-RM")
+install_github("chirimalance-tech/cNBextended")
+
+
+library(COUNT)
+library(DDPM)
+library(gamlss)
+library(gamlss.dist)
+library(VGAM)
+library(AER)
+library(COMPoissonReg)
+library(cNB)
+library(cNBextended)
+```
+
+
+```{r}
+
+# Prepare the data
+
+data("RecreationDemand")
+```
+
+
+
+```{r}
+
+# fit the necessary models
+
+
+# Poisson Regression Model
+poi_rectrips <- glm(trips ~ income + quality + userfee, 
+               data = RecreationDemand, family=poisson)
+
+# Standard Negative Binomial Regression Model
+nb2_rectrips <- gamlss(trips ~ income + quality + userfee,
+                       sigma.fo = ~ + quality + userfee,
+                       family = NBI,
+                       data = RecreationDemand)
+
+# Standard Negative Binomial Regression Model with covariates explaining dispersion
+nb2_rectrips_compare <- gamlss(trips ~ income + quality + userfee,
+                       sigma.fo = ~ + quality + userfee,
+                       family = NBI,
+                       data = RecreationDemand)
+
+# Contaminated Negative Binomial Regression Model
+cnb2_rectrips <- ml.cnb(trips ~ income + quality + userfee,
+                        data = RecreationDemand)
+
+
+# Contaminated Negative Binomial Regression Model with covariates explaining dispersion
+cnb2_rectrips_compare <- ml.ex.cnb(trips ~ income + quality + userfee,# + quality
+                                   alpha.formula = ~  +quality + userfee,# + quality+ costS,
+                                   data = RecreationDemand,
+                                   method = "BFGS")
+
+
+# Contaminated Negative Binomial Regression Model with covariates explaining dispersion, proportion of contamiantion and inflation.
+cnb2_rectrips_delta_eta <- ml.ex.cnb(trips ~ income + quality + userfee,# + quality
+                           alpha.formula = ~  +quality + userfee,# + quality+ costS,
+                           delta.formula = ~  +income + quality,# + quality+ costS,
+                           eta.formula   = ~  +userfee,# + quality+ costS,
+                           data = RecreationDemand,
+                           method = "CG")
+
+
+
+# Zero Inflated Negative Binomial Regression Model
+zinb_rectrips <- gamlss(trips ~ income + quality + userfee,
+                   control = gamlss.control(n.cyc = 1000),
+                   family = ZINBI, data = RecreationDemand)
+
+# Zero Inflated Poisson Regression Model
+zip_rectrips <- gamlss(trips ~ income + quality + userfee,
+                  control = gamlss.control(n.cyc = 1000), 
+                  family = ZIP2, data = RecreationDemand)
+
+# Generalized Negative Binomial Regression Model
+nbp_rectrips <- vglm(trips ~ income + quality + userfee,
+                control = vglm.control(maxit = 1000, maxitl = 1000, trace = T), 
+                family = negbinomial, data = RecreationDemand)
+
+
+
+# Linear Negative Binomial Regression Model
+nb1_rectrips <- gamlss(trips ~ income + quality + userfee,
+                  family = NBI,
+                  data = RecreationDemand)
+```
+
+
+
+```{r}
+
+# Obtain the log likelihoods of the fitted models
+
+print(round(as.numeric(logLik(poi_rectrips)), 4) ,digits = 9) 
+print(round(as.numeric(logLik(nb2_rectrips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(zinb_rectrips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(zip_rectrips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(nbp_rectrips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(nb1_rectrips)), 4) ,digits = 9)
+print(round(cnb2_rectrips$loglike, 4) ,digits = 9)
+
+```
+
+
+
+```{r}
+
+# Obtain the Akaike Information Criteria (AIC) of the fitted models
+
+print(round(AIC(poi_rectrips, nb2_rectrips, zinb_rectrips, zip_rectrips, nb1_rectrips), 4) ,digits = 9)
+print(round(AIC(nbp_rectrips), 4) ,digits = 9)
+print(round(cnb2_rectrips$AIC, 4) ,digits = 9)
+```
+
+
+
+```{r}
+
+# Obtain the Bayesian Information Criteria (BIC) of the fitted models
+
+print(round(BIC(poi_rectrips, nb2_rectrips, zinb_rectrips, zip_rectrips, nb1_rectrips), 4) ,digits = 9)
+print(round(BIC(nbp_rectrips), 4) ,digits = 9)
+print(round(cnb2_rectrips$BIC, 4) ,digits = 9)
+```
+
+
+
+```{r}
+
+# Obtain the Hannan Quinn Information Criteria (HQIC) of the fitted models
+
+hqic <- function(model, n) {
+  ll <- as.numeric(logLik(model))       # log-likelihood
+  k  <- attr(logLik(model), "df")       # number of parameters
+  -2 * ll + 2 * k * log(log(n))
+}
+
+n <- nrow(RecreationDemand)  # sample size
+
+print(round(hqic(poi_rectrips, n), 4) ,digits = 9)
+print(round(hqic(nb2_rectrips, n), 4) ,digits = 9)
+print(round(hqic(zinb_rectrips, n), 4) ,digits = 9)
+print(round(hqic(zip_rectrips, n), 4) ,digits = 9)
+print(round(hqic(nb1_rectrips, n), 4) ,digits = 9)
+
+
+ll <- as.numeric(logLik(nbp_rectrips))       # -12182.16
+k  <- length(coef(nbp_rectrips))             # number of parameters
+n  <- nrow(RecreationDemand)                             # sample size
+hqic_val <- -2 * ll + 2 * k * log(log(n))
+print(round(hqic_val, 4) ,digits = 9)
+
+
+ll <- cnb2_rectrips$loglike       
+k  <- length(cnb2_rectrips$results)             # number of parameters
+n  <- nrow(RecreationDemand)                             # sample size
+
+hqic_val <- -2 * ll + 2 * k * log(log(n))
+print(round(hqic_val, 4) ,digits = 9)
+```
+
+
+
+```{r}
+# standard negative binomial regression model with covariates for dispersion results 
+
+print(round(summary(nb2_rectrips_compare), 4) ,digits = 9)
+```
+
+
+
+```{r}
+# contaminated negative binomial regression model with covariates for dispersion results 
+
+round(cnb2_rectrips_compare$results, 4)
+```
+
+
+
+```{r}
+# contaminated negative binomial regression model with covariates for dispersion, proportion of contamination and inflation parameter results 
+
+round(cnb2_rectrips_delta_eta$results, 4)
+```

@@ -1,0 +1,201 @@
+---
+title: "cNBetended NMES1988 Results "
+author: "Lance Chirima"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# get the necessary packages
+
+install.packages("devtools")
+library(devtools)
+install_github("arnootto/cNB-RM")
+install_github("chirimalance-tech/cNBextended")
+
+
+library(COUNT) 
+library(gamlss)
+library(gamlss.dist)
+library(VGAM)
+library(AER)
+library(cNB)
+library(cNBextended)
+```
+
+
+```{r}
+
+# Prepare the data
+
+data("NMES1988")
+head(NMES1988)
+x <- model.matrix(~ visits + nvisits + ovisits + novisits +  emergency + hospital + health + chronic + adl + region  + afam  + gender + married + school + income + employed + insurance + medicaid, data = NMES1988)
+x <- as.data.frame(x)
+
+options(contrasts = c("contr.treatment", "contr.poly"))
+
+data(x)
+head(x)
+```
+
+
+
+```{r}
+
+# fit the necessary models
+
+
+# Poisson Regression Model
+poi_trips <- glm(visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                 data = x, 
+                 family=poisson)
+
+# Standard Negative Binomial Regression Model
+nb2_trips_compare <- glm.nb(visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                     data = x)
+
+# Standard Negative Binomial Regression Model with covariates explaining dispersion
+nb2_trips <- gamlss(visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                    sigma.fo = ~ + adllimited,
+                    family = NBI, 
+                    data = x)
+
+
+# Contaminated Negative Binomial Regression Model
+cnb2_trips <- ml.cnb(formula = visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                        data = x) 
+
+
+# Contaminated Negative Binomial Regression Model with covariates explaining dispersion
+cnb2_trips_compare <- ml.ex.cnb(formula = visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                        alpha.formula = ~ + adllimited, 
+                        data = x,
+                        method = "CG") 
+
+
+# Contaminated Negative Binomial Regression Model with covariates explaining dispersion, proportion of contamiantion and inflation.
+cnb2_trips_delta_eta <- ml.ex.cnb(formula = visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                                  alpha.formula = ~ + adllimited, 
+                                  delta.formula = ~ + nvisits, 
+                                  eta.formula = ~ + chronic, 
+                                  data = x,
+                                  method = "BFGS") 
+
+
+
+# Zero Inflated Negative Binomial Regression Model
+zinb_trips <- gamlss(visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                     control = gamlss.control(n.cyc = 1000),
+                     family = ZINBI, data = x)
+
+# Zero Inflated Poisson Regression Model
+zip_trips <- gamlss(visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                    control = gamlss.control(n.cyc = 1000), 
+                    family = ZIP2, data = x)
+
+# Generalized Negative Binomial Regression Model
+nbp_trips <- vglm(visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                  control = vglm.control(maxit = 1000, maxitl = 1000, trace = T), 
+                  family = negbinomial, data = x)
+
+
+# Linear Negative Binomial Regression Model
+nb1_trips <- gamlss(visits ~  + hospital  + insuranceyes + healthpoor  + chronic + adllimited + gendermale + school + afamyes ,
+                    family = NBI,
+                    data = x)
+```
+
+
+
+```{r}
+
+# Obtain the log likelihoods of the fitted models
+
+print(round(as.numeric(logLik(poi_trips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(nb2_trips_compare)), 4) ,digits = 9)
+print(round(as.numeric(logLik(zinb_trips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(zip_trips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(nbp_trips)), 4) ,digits = 9)
+print(round(as.numeric(logLik(nb1_trips)), 4) ,digits = 9)
+print(round(cnb2_trips$loglike, 4) ,digits = 9)
+```
+
+
+
+```{r}
+
+# Obtain the Akaike Information Criteria (AIC) of the fitted models
+
+print(round(AIC(poi_trips, nb2_trips_compare, zinb_trips, zip_trips, nb1_trips), 4) ,digits = 9)
+print(round(AIC(nbp_trips), 4) ,digits = 9)
+print(round(cnb2_trips$AIC, 4) ,digits = 9)
+```
+
+
+
+```{r}
+
+# Obtain the Bayesian Information Criteria (BIC) of the fitted models
+
+print(BIC(poi_trips, nb2_trips_compare, zinb_trips, zip_trips, nb1_trips) ,digits = 9)
+print(BIC(nbp_trips) ,digits = 9)
+print(round(cnb2_trips$BIC, 4) ,digits = 9)
+```
+
+
+
+```{r}
+
+# Obtain the Hannan Quinn Information Criteria (HQIC) of the fitted models
+
+hqic <- function(model, n) {
+  ll <- as.numeric(logLik(model))       # log-likelihood
+  k  <- attr(logLik(model), "df")       # number of parameters
+  -2 * ll + 2 * k * log(log(n))
+}
+n <- nrow(x)  # sample size
+
+print(round(hqic(poi_trips, n), 4) ,digits = 9)
+print(round(hqic(nb2_trips_compare, n), 4) ,digits = 9)
+print(round(hqic(zinb_trips, n), 4) ,digits = 9)
+print(round(hqic(zip_trips, n), 4) ,digits = 9)
+print(round(hqic(nb1_trips, n), 4) ,digits = 9)
+
+ll <- as.numeric(logLik(nbp_trips))       
+k  <- length(coef(nbp_trips))             # number of parameters
+
+hqic_val <- -2 * ll + 2 * k * log(log(n))
+print(round(hqic_val, 4) ,digits = 9)
+
+k  <- nrow(cnb2_trips$results)
+             # number of parameters
+cnb2_trips_HQIC <- -2 * cnb2_trips$loglike + 2 * k * log(log(n))
+print(round(cnb2_trips_HQIC, 4) ,digits = 9)
+```
+
+
+
+```{r}
+# standard negative binomial regression model with covariates for dispersion results 
+
+print(round(summary(nb2_trips), 4) ,digits = 9)
+```
+
+
+
+```{r}
+# contaminated negative binomial regression model with covariates for dispersion results 
+
+round(cnb2_trips_compare$results, 4)
+```
+
+
+
+```{r}
+# contaminated negative binomial regression model with covariates for dispersion, proportion of contamination and inflation parameter results 
+
+round(cnb2_trips_delta_eta$results, 4)
+```

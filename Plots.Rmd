@@ -1,0 +1,205 @@
+---
+title: "cNB PLots"
+author: "Lance Chirima"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+
+mu <- seq(0, 5, by = 0.0001)
+delta1 <- 0.04
+delta2 <- 0.35
+delta3 <- 0.55
+eta <- 2
+alpha <- 2
+
+nb_variance <- mu + (alpha*mu**2)
+variance1 <- mu + ((1 - delta1) + delta1*eta) * (alpha*mu**2)
+variance2 <- mu + ((1 - delta2) + delta2*eta) * (alpha*mu**2)
+variance3 <- mu + ((1 - delta3) + delta3*eta) * (alpha*mu**2)
+
+png(filename = "var_mu_different_delta.png", width = 6, height = 7.5, res = 300, units = "in")
+
+# Plot empirical probabilities
+plot(mu, 
+     nb_variance, 
+     type = "l", pch = 10, lwd = 2,
+     xlab = expression(mu), 
+     ylab = "Variance",
+     lty = 1)
+
+# Compute theoretical Poisson probabilities
+y1 <- variance1
+y2 <- variance2
+y3 <- variance3
+
+# Add second line and points (Poisson)
+
+lines(mu, y1, type = "l", lty = 2)
+
+lines(mu, y2, type = "l", lty = 3)
+
+lines(mu, y3, type = "l", lty = 4)
+
+# Add legend
+legend("topleft",
+       legend = c("NB", expression(delta == 0.04), expression(delta == 0.35), expression(delta == 0.55)),
+       lty = c(1, 2, 3, 4),
+       bty = "n",
+       cex = 0.8)
+dev.off()
+
+```
+
+
+
+```{r}
+
+mu <- seq(0, 5, by = 0.0001)
+delta <- 0.04
+eta1 <- 4
+eta2 <- 8
+eta3 <- 16
+alpha <- 2
+
+nb_variance <- mu + (alpha*mu**2)
+variance1 <- mu + ((1 - delta) + delta*eta1) * (alpha*mu**2)
+variance2 <- mu + ((1 - delta) + delta*eta2) * (alpha*mu**2)
+variance3 <- mu + ((1 - delta) + delta*eta3) * (alpha*mu**2)
+
+png(filename = "var_mu_different_eta.png", width = 6, height = 7.5, res = 300, units = "in")
+
+# Plot empirical probabilities
+plot(mu, 
+     nb_variance, 
+     type = "l", pch = 10, lwd = 2,
+     xlab = expression(mu), 
+     ylab = "Variance",
+     lty = 1)
+
+# Compute theoretical Poisson probabilities
+y1 <- variance1
+y2 <- variance2
+y3 <- variance3
+
+# Add second line and points (Poisson)
+
+lines(mu, y1, type = "l", lty = 2)
+
+lines(mu, y2, type = "l", lty = 3)
+
+lines(mu, y3, type = "l", lty = 4)
+
+# Add legend
+legend("topleft",
+       legend = c("NB", expression(eta == 4), expression(eta == 8), expression(eta == 16)),
+       lty = c(1, 2, 3, 4),
+       bty = "n",
+       cex = 0.8)
+dev.off()
+```
+
+
+
+```{r}
+
+alpha <- seq(0, 5, by = 0.0001)
+delta1 <- 0.04
+delta2 <- 0.35
+delta3 <- 0.55
+eta <- 2
+mu <- 2
+
+nb_variance <- mu + (alpha*mu**2)
+variance1 <- mu + ((1 - delta1) + delta1*eta) * (alpha*mu**2)
+variance2 <- mu + ((1 - delta2) + delta2*eta) * (alpha*mu**2)
+variance3 <- mu + ((1 - delta3) + delta3*eta) * (alpha*mu**2)
+
+png(filename = "var_alpha_different_delta.png", width = 6, height = 7.5, res = 300, units = "in")
+
+# Plot empirical probabilities
+plot(alpha, 
+     nb_variance, 
+     type = "l", pch = 10, lwd = 2,
+     xlab = expression(alpha), 
+     ylab = "Variance",
+     lty = 1)
+
+# Compute theoretical Poisson probabilities
+y1 <- variance1
+y2 <- variance2
+y3 <- variance3
+
+# Add second line and points (Poisson)
+
+lines(alpha, y1, type = "l", lty = 2)
+
+lines(alpha, y2, type = "l", lty = 3)
+
+lines(alpha, y3, type = "l", lty = 4)
+
+# Add legend
+legend("topleft",
+       legend = c("NB", expression(delta == 0.04), expression(delta == 0.35), expression(delta == 0.55)),
+       lty = c(1, 2, 3, 4),
+       bty = "n",
+       cex = 0.8)
+dev.off()
+
+```
+
+
+```{r}
+
+alpha <- seq(0, 5, by = 0.0001)
+delta <- 0.04
+eta1 <- 4
+eta2 <- 8
+eta3 <- 16
+mu <- 2
+
+nb_variance <- mu + (alpha*mu**2)
+variance1 <- mu + ((1 - delta) + delta*eta1) * (alpha*mu**2)
+variance2 <- mu + ((1 - delta) + delta*eta2) * (alpha*mu**2)
+variance3 <- mu + ((1 - delta) + delta*eta3) * (alpha*mu**2)
+
+png(filename = "var_alpha_different_eta.png", width = 6, height = 7.5, res = 300, units = "in")
+
+# Plot empirical probabilities
+plot(alpha, 
+     nb_variance, 
+     type = "l", pch = 10, lwd = 2,
+     xlab = expression(alpha), 
+     ylab = "Variance",
+     lty = 1)
+
+# Compute theoretical Poisson probabilities
+y1 <- variance1
+y2 <- variance2
+y3 <- variance3
+
+# Add second line and points (Poisson)
+
+lines(alpha, y1, type = "l", lty = 2)
+
+lines(alpha, y2, type = "l", lty = 3)
+
+lines(alpha, y3, type = "l", lty = 4)
+
+# Add legend
+legend("topleft",
+       legend = c("NB", expression(eta == 4), expression(eta == 8), expression(eta == 16)),
+       lty = c(1, 2, 3, 4),
+       bty = "n",
+       cex = 0.8)
+
+dev.off()
+
+```
