@@ -13,7 +13,7 @@ Welcome! 🎉 This repository is designed to make my work on the **Extended Cont
 You can explore the model interactively through my deployed Shiny app.  
 Click the button below to open it in a new tab:
 
-[![Launch Shiny App](https://img.shields.io/badge/Launch%20App-Click%20Here-brightgreen)](https://chirimalance-tech.shinyapps.io/cNBextendedApp/){:target="_blank"}
+[![Launch Shiny App](https://img.shields.io/badge/Launch%20App-Click%20Here-brightgreen)](https://chirimalance-tech.shinyapps.io/cNBextendedApp/)
 
 ## 📖 Purpose
 This repository allows users to:
