@@ -39,78 +39,8 @@ dcnbinom<-function(x, mu, alpha, delta, eta, log=F){
   }
 }
 
-rcnbinom_ex_regression <- function(n = 10000,
-                                   theta = c((1.8 - 1), (1.9 - 1)),
-                                   beta = c(2, 0.75, -1.5),
-                                   gamma = c(0.05 / (1 - 0.05), 0.04 / (1 - 0.04)),
-                                   lambda = c((1.2 - 1), (1.3 - 1)),
-                                   contam_perc = 0) {
-  dX <- length(beta) - 1 # number of predictors
-  dU <- length(theta) - 1
-  dV <- length(gamma) - 1
-  dZ <- length(lambda) - 1
 
-  # X, U, V, Z matrices
-  X <- matrix(runif(n * dX, -2, 2), nrow = n, ncol = dX)
-  Xstar <- cbind(1, X)
-
-  U <- matrix(runif(n * dU, -2, 2), nrow = n, ncol = dU)
-  Ustar <- cbind(1, U)
-
-  V <- matrix(runif(n * dV, -2, 2), nrow = n, ncol = dV)
-  Vstar <- cbind(1, V)
-
-  Z <- matrix(runif(n * dZ, -2, 2), nrow = n, ncol = dZ)
-  Zstar <- cbind(1, Z)
-
-  # Linear predictors
-  lin.pred.mu  <- Xstar %*% beta
-  cond.mu    <- exp(lin.pred.mu)
-  lin.pred.alpha <- Ustar %*% theta
-  cond.alpha   <- exp(lin.pred.alpha)
-  lin.pred.delta <- Vstar %*% gamma
-  cond.delta   <- exp(lin.pred.delta) / (1 + exp(lin.pred.delta))
-  lin.pred.eta  <- Zstar %*% lambda
-  cond.eta    <- exp(lin.pred.eta)
-
-  # Bernoulli mixture
-  bernoulli <- rbinom(n, 1, prob = cond.delta)
-
-  # Generate counts
-  mu_good  <- cond.mu[bernoulli == 1]
-  theta_good <- cond.alpha[bernoulli == 1]
-  cnby_good <- MASS::rnegbin(length(mu_good), mu = mu_good, theta = theta_good)
-
-  if (sum(bernoulli == 0) > 0) {
-    mu_bad  <- cond.mu[bernoulli == 0]
-    theta_bad <- cond.alpha[bernoulli == 0] * cond.eta[bernoulli == 0]
-    cnby_bad <- MASS::rnegbin(length(mu_bad), mu = mu_bad, theta = theta_bad)
-
-    cnby <- numeric(n)
-    cnby[bernoulli == 1] <- cnby_good
-    cnby[bernoulli == 0] <- cnby_bad
-  } else {
-    cnby <- cnby_good
-  }
-
-  # Contaminate a percentage of the data if contam_perc > 0
-  if (contam_perc > 0) {
-    n_replace <- ceiling(n * contam_perc / 100)
-    contam_idx <- sample(seq_len(n), n_replace)
-    cnby[contam_idx] <- sample(cnby, n_replace, replace = TRUE) + rpois(n_replace, lambda = 20)
-  }
-
-  out <- data.frame(cbind(cnby, Xstar, Ustar, Vstar, Zstar))
-  colnames(out) <- c("cnby",
-                     paste0("x", 0:dX),
-                     paste0("u", 0:dU),
-                     paste0("v", 0:dV),
-                     paste0("z", 0:dZ))
-  return(out)
-}
-
-
-ml.ex.cnb <- function(formula, alpha.formula=~1, delta.formula=~1, eta.formula=~1, data, start = NULL, method = "Nelder-Mead", reltol=1e-10, maxit=1000, hessian=T) {
+ml.ex.cnb <- function(formula, alpha.formula=~1, delta.formula=~1, eta.formula=~1, data, start = NULL, method = "BFGS", reltol=1e-10, maxit=1000, hessian=T) {
   mf <- model.frame(formula, data)
   mt <- attr(mf, "terms")
   y <- model.response(mf, "numeric")
@@ -240,92 +170,6 @@ ml.ex.cnb <- function(formula, alpha.formula=~1, delta.formula=~1, eta.formula=~
 }
 
 
-# Dataset creation
-make_dataset <- function(n, beta, p_percent = 0) {
-  # Generate dataset with given beta
-  reg <- rcnbinom_ex_regression(n = n, beta = beta)
-  df <- data.frame(cnby = reg$cnby, x0 = reg$x0, x1 = reg$x1, x2 = reg$x2)
-
-  # Apply contamination
-  if (p_percent > 0) {
-    p <- max(1, floor(n * p_percent / 100))
-    minv <- min(df$cnby, na.rm = TRUE)
-    maxv <- max(df$cnby, na.rm = TRUE)
-    df$cnby[sample(1:n, p)] <- sample(minv:maxv, size = p, replace = TRUE)
-  }
-  df
-}
-
-
-# Model fitting wrappers
-fit_glm_nb <- function(df) {
-  tryCatch(
-    suppressWarnings(MASS::glm.nb(cnby ~ x1 + x2, data = df, control = glm.control(maxit = 1000))),
-    error = function(e) NULL
-  )
-}
-
-fit_cnb_extended <- function(df) {
-  res <- tryCatch({
-    suppressWarnings(suppressMessages(
-      ml.ex.cnb(formula = cnby ~ x1 + x2, data = df, method = "Nelder-Mead")
-    ))
-  }, error = function(e) {
-    warning("cNB fit failed: ", e$message)
-    return(NULL)
-  })
-
-  # Check for non-finite estimates
-  if (!is.null(res) && any(!is.finite(res$beta[1:3]))) return(NULL)
-
-  res
-}
-
-# Result extractors
-extract_glm_nb_results <- function(fit) {
-  if (is.null(fit)) return(tibble(term = c("beta0","beta1","beta2"), estimate = NA_real_, std_error = NA_real_))
-  s <- summary(fit)$coefficients
-  tibble(term = c("beta0","beta1","beta2"),
-         estimate = as.numeric(s[c("(Intercept)", "x1", "x2"), "Estimate"]),
-         std_error = as.numeric(s[c("(Intercept)", "x1", "x2"), "Std. Error"]))
-}
-
-extract_cnb_results <- function(res) {
-  if (is.null(res) || !all(c("beta","results") %in% names(res)) ||
-      any(!is.finite(res$beta[1:3])) ||
-      any(is.na(res$results$Std.Error[1:3]))) {
-    return(tibble(term = c("beta0","beta1","beta2"),
-                  estimate = NA_real_, std_error = NA_real_))
-  }
-
-  tibble(term = c("beta0","beta1","beta2"),
-         estimate = as.numeric(res$beta[1:3]),
-         std_error = as.numeric(res$results$Std.Error[1:3]))
-}
-
-
-# Summarize bias and MSE
-process_results_table <- function(results_tbl, true_beta) {
-  truth_df <- tibble(term = names(true_beta), truth = as.numeric(true_beta))
-
-  results_tbl %>%
-    left_join(truth_df, by = "term") %>%
-    group_by(term) %>%
-    summarise(
-      bias  = mean(estimate - truth, na.rm = TRUE),
-      mse  = mean((estimate - truth)^2, na.rm = TRUE),
-      n_used = sum(!is.na(estimate)),
-      .groups = "drop"
-    )
-}
-
-
-
-
-# MathJax-friendly labels
-term_expr <- c(beta0 = expression(beta[0]), beta1 = expression(beta[1]), beta2 = expression(beta[2]))
-
-
 
 ui <- navbarPage(
   id = "navbar",
@@ -394,7 +238,7 @@ ui <- navbarPage(
         div(
           class = "home-row",
           actionButton("go_var", "cNB Interactive Visuals", class = "home-btn"),
-          actionButton("go_sens", "Sensitivity Study", class = "home-btn"),
+          # actionButton("go_sens", "Sensitivity Study", class = "home-btn"),
           actionButton("go_data", "Data Application", class = "home-btn"),
           actionButton("go_bg", "Background Info", class = "home-btn")
         ),
@@ -432,56 +276,7 @@ ui <- navbarPage(
            )
   ),
 
-  # Tab 3: Sensitivity Analysis Simulator (App 2)
-  tabPanel("Sensitivity Study",
-           sidebarLayout(
-             sidebarPanel(
-               numericInput("n_datasets", "Number of datasets to generate:", value = 20, min = 10, max = 3000, step = 10),
-               numericInput("n_obs", "Observations per dataset:", value = 500, min = 50, max = 10000, step = 50),
-               numericInput("seed", "Random seed:", value = 345),
-
-               h4("β Parameters"),
-               numericInput("beta0", "β₀:", value = 2),
-               numericInput("beta1", "β₁:", value = 0.75),
-               numericInput("beta2", "β₂:", value = -1.5),
-
-               sliderInput("contam_perc", "Percentage of Outliers", min = 0, max = 100, value = 1.5, step = 0.5),
-
-               actionButton("run_sim", "Run simulation", class = "btn-primary"),
-               br(), br(),
-               downloadButton("download_csv", "Download combined results (CSV)")
-             )
-             ,
-             mainPanel(
-               tabsetPanel(
-                 tabPanel("Summary",
-                          withMathJax(),
-                          br(),
-                          hr(),
-                          p("Simulation results (Bias & MSE) for NB vs cNB under user-specified contamination."),
-                          DTOutput("summary_table"),
-                          br(),
-                          fluidRow(
-                            column(6, plotOutput("plot_bias_nb", height = "300px")),
-                            column(6, plotOutput("plot_bias_cnb", height = "300px"))
-                          ),
-                          br(),
-                          fluidRow(
-                            column(12, plotOutput("plot_bias_compare", height = "320px"))
-                          ),
-                          br(),
-                          verbatimTextOutput("info_text")
-                 ),
-                 tabPanel("Raw per-dataset (sample)",
-                          h4("NB"), DTOutput("raw_nb"),
-                          h4("cNB"), DTOutput("raw_cnb")
-
-                 )
-               )
-             )
-           )
-  )
-  ,
+ 
 
   tabPanel("Data Application",
            sidebarLayout(
@@ -669,9 +464,9 @@ server <- function(input, output, session) {
     updateNavbarPage(session, inputId = "navbar", selected = "cNB Interactive Visuals")
   })
 
-  observeEvent(input$go_sens, {
-    updateNavbarPage(session, inputId = "navbar", selected = "Sensitivity Study")
-  })
+  # observeEvent(input$go_sens, {
+  #   updateNavbarPage(session, inputId = "navbar", selected = "Sensitivity Study")
+  # })
 
   observeEvent(input$go_data, {
     updateNavbarPage(session, inputId = "navbar", selected = "Data Application")
@@ -679,194 +474,6 @@ server <- function(input, output, session) {
 
   observeEvent(input$go_bg, {
     updateNavbarPage(session, inputId = "navbar", selected = "Background Information")
-  })
-
-  # ---- SERVER: Sensitivity Study ----
-  sim_results <- eventReactive(input$run_sim, {
-    showModal(modalDialog(
-      title = NULL,
-      div(style = "text-align:center;", h3("Please wait — running simulations")),
-      footer = NULL,
-      easyClose = FALSE
-    ))
-    on.exit(removeModal())
-
-    set.seed(input$seed)
-    n_datasets <- input$n_datasets
-    n_obs   <- input$n_obs
-    contam_perc <- input$contam_perc / 100 # convert to proportion
-    true_beta <- c(beta0 = input$beta0, beta1 = input$beta1, beta2 = input$beta2)
-
-
-    nb_list <- vector("list", n_datasets)
-    cnb_list <- vector("list", n_datasets)
-
-    withProgress(message = paste0("Running simulations at ", input$contam_perc, "% contamination"), value = 0, {
-      for (i in seq_len(n_datasets)) {
-        incProgress(1/n_datasets, detail = paste("Dataset", i, "of", n_datasets))
-
-        # Generate dataset using your modified function
-        d <- make_dataset(n = n_obs, beta = true_beta, p_percent = input$contam_perc)
-
-        # Fit models
-        nb_fit <- fit_glm_nb(d)
-        cnb_fit <- fit_cnb_extended(d)
-
-        nb_list[[i]] <- extract_glm_nb_results(nb_fit) %>% mutate(dataset = i)
-        cnb_list[[i]] <- extract_cnb_results(cnb_fit)  %>% mutate(dataset = i)
-      }
-    })
-
-    nb_df <- bind_rows(nb_list)
-    cnb_df <- bind_rows(cnb_list)
-
-    # Summarize results
-    true_beta <- c(beta0 = input$beta0,
-                   beta1 = input$beta1,
-                   beta2 = input$beta2)
-
-    nb_summary <- process_results_table(nb_df, true_beta = true_beta) %>%
-      rename(Bias_NB = bias, MSE_NB = mse, Nused_NB = n_used)
-
-    cnb_summary <- process_results_table(cnb_df, true_beta = true_beta) %>%
-      rename(Bias_cNB = bias, MSE_cNB = mse, Nused_cNB = n_used)
-
-
-    combined <- nb_summary %>%
-      left_join(cnb_summary, by = "term") %>%
-      mutate(term_label = case_when(
-        term == "b0" ~ "\\(\\beta_0\\)",
-        term == "b1" ~ "\\(\\beta_1\\)",
-        term == "b2" ~ "\\(\\beta_2\\)",
-        TRUE ~ term
-      ))
-
-    list(combined = combined, nb_df = nb_df, cnb_df = cnb_df)
-  })
-
-  # ---- SUMMARY TABLE ----
-  output$summary_table <- renderDT({
-    req(sim_results())
-    dat <- sim_results()$combined
-
-    # Round numeric columns
-    numcols <- sapply(dat, is.numeric)
-    dat[numcols] <- lapply(dat[numcols], function(x) round(x, 4))
-
-    # Select only relevant columns
-    dat_display <- dat %>%
-      dplyr::select(term_label, Bias_NB, MSE_NB, Bias_cNB, MSE_cNB)
-
-    colnames(dat_display) <- c("Parameter", "Bias NB", "MSE NB", "Bias cNB", "MSE cNB")
-
-    datatable(dat_display,
-              escape = FALSE,
-              options = list(dom='t', columnDefs = list(list(className='dt-center', targets=1:4))),
-              class = 'cell-border stripe')
-  })
-
-  # ---- RAW TABLES ----
-  output$raw_nb <- renderDT({ req(sim_results()); sim_results()$nb_df %>% filter(dataset <= 10) %>% datatable() })
-  output$raw_cnb <- renderDT({ req(sim_results()); sim_results()$cnb_df %>% filter(dataset <= 10) %>% datatable() })
-
-  # ---- INFO TEXT ----
-  output$info_text <- renderText({
-    df <- sim_results()
-    failed_cnb <- df$cnb_df %>%
-      group_by(dataset) %>%
-      summarise(all_na = all(is.na(estimate)), .groups="drop") %>%
-      summarise(fails = sum(all_na)) %>%
-      pull(fails)
-    paste0("cNB fits failed for ", input$contam_perc, "% of Outliers: ", failed_cnb)
-  })
-
-  # ---- DOWNLOAD CSV ----
-  output$download_csv <- downloadHandler(
-    filename = function() paste0("sensitivity_simulation_results_", Sys.Date(), ".csv"),
-    content = function(file) {
-      req(sim_results())
-      write.csv(sim_results()$combined, file, row.names = FALSE)
-    }
-  )
-
-  # ---- PLOTS ----
-
-  # Bias — NB
-  output$plot_bias_nb <- renderPlot({
-    req(sim_results())
-    df <- sim_results()$combined
-
-    ggplot(df, aes(x=factor(term, levels=c("b0", "b1", "b2")), y=Bias_NB)) +
-      geom_boxplot(fill="#34495E", alpha=0.7, outlier.color="grey40") +
-      scale_x_discrete(labels=c(expression(beta[0]), expression(beta[1]), expression(beta[2]))) +
-      labs(
-        title=paste0("Bias Distribution — NB (", input$contam_perc, "% Outliers)"),
-        x=NULL, y="Bias"
-      ) +
-      theme_light(base_size = 14)
-  })
-
-  # Bias — cNB
-  output$plot_bias_cnb <- renderPlot({
-    req(sim_results())
-    df <- sim_results()$combined
-
-    ggplot(df, aes(x=factor(term, levels=c("b0", "b1", "b2")), y=Bias_cNB)) +
-      geom_boxplot(fill="#E74C3C", alpha=0.7, outlier.color="grey40") +
-      scale_x_discrete(labels=c(expression(beta[0]), expression(beta[1]), expression(beta[2]))) +
-      labs(
-        title=paste0("Bias Distribution — cNB (", input$contam_perc, "% Outliers)"),
-        x=NULL, y="Bias"
-      ) +
-      theme_light(base_size = 14)
-  })
-
-  # Bias comparison — NB vs cNB
-  output$plot_bias_compare <- renderPlot({
-    req(sim_results())
-    df <- sim_results()$combined %>%
-      pivot_longer(cols=c(Bias_NB, Bias_cNB), names_to="Model", values_to="Bias")
-
-    ggplot(df, aes(
-      x=factor(term, levels=c("b0","b1","b2")),
-      y=Bias,
-      fill=Model
-    )) +
-      geom_boxplot(alpha=0.7, outlier.color="grey40") +
-      scale_x_discrete(labels=c(expression(beta[0]), expression(beta[1]), expression(beta[2]))) +
-      scale_fill_manual(
-        values=c("Bias_NB"="#34495E", "Bias_cNB"="#E74C3C"),
-        labels=c("NB","cNB")
-      ) +
-      labs(
-        title=paste0("Bias Comparison (", input$contam_perc, "% Outliers)"),
-        x=NULL, y="Bias", fill="Model"
-      ) +
-      theme_light(base_size = 14)
-  })
-
-  # ---- MSE Comparison ----
-  output$plot_mse_compare <- renderPlot({
-    req(sim_results())
-    df <- sim_results()$combined %>%
-      pivot_longer(cols=c(MSE_NB, MSE_cNB), names_to="Model", values_to="MSE")
-
-    ggplot(df, aes(
-      x=factor(term, levels=c("b0","b1","b2")),
-      y=MSE,
-      fill=Model
-    )) +
-      geom_boxplot(alpha=0.7, outlier.color="grey40") +
-      scale_x_discrete(labels=c(expression(beta[0]), expression(beta[1]), expression(beta[2]))) +
-      scale_fill_manual(
-        values=c("MSE_NB"="#34495E", "MSE_cNB"="#E74C3C"),
-        labels=c("NB","cNB")
-      ) +
-      labs(
-        title=paste0("MSE Comparison (", input$contam_perc, "% Outliers)"),
-        x=NULL, y="Mean Squared Error", fill="Model"
-      ) +
-      theme_light(base_size = 14)
   })
 
 
@@ -999,8 +606,22 @@ server <- function(input, output, session) {
       rv$data <- RecreationDemand; rv$name <- "RecreationDemand"
       output$status <- renderText("Loaded RecreationDemand (AER)")
     } else if (input$dataset_choice == "nmes") {
+      # data("NMES1988", package = "AER")
+      # rv$data <- NMES1988; rv$name <- "NMES1988"
       data("NMES1988", package = "AER")
-      rv$data <- NMES1988; rv$name <- "NMES1988"
+
+      options(contrasts = c("contr.treatment", "contr.poly"))
+
+      NMES1988_mm <- model.matrix(
+        ~ visits + nvisits + ovisits + novisits + emergency + hospital +
+          health + chronic + adl + region + afam + gender + married +
+          school + income + employed + insurance + medicaid -1,
+        data = NMES1988
+      )
+
+      rv$data <- as.data.frame(NMES1988_mm)
+      rv$name <- "NMES1988"
+
       output$status <- renderText("Loaded NMES1988 (AER)")
     } else if (input$dataset_choice == "upload" && !is.null(input$file_upload)) {
       rv$data <- tryCatch(read.csv(input$file_upload$datapath, stringsAsFactors = FALSE),
